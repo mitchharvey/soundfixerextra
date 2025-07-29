@@ -8,7 +8,6 @@ const indivElements = document.getElementById('individual-elements')
 const elementsTpl = document.getElementById('elements-tpl')
 
 function applySettings (fid, elid, newSettings) {
-	console.log(`apply settings: ${fid} ${elid} ${JSON.stringify(newSettings)}`)
 	return browser.tabs.executeScript(
 		tid, 
 		{ frameId: fid,
@@ -53,11 +52,48 @@ function applySettings (fid, elid, newSettings) {
 					gain: el.xSoundFixerGain.gain.value,
 					pan: el.xSoundFixerPan.pan.value,
 					mono: el.xSoundFixerContext.destination.channelCount == 1,
-					flip: el.xSoundFixerFlipped,
+					flip: el.xSoundFixerFlipped || false,
 				}
 			})()`
 		}
-	)
+	).then(() => {
+		// Save complete settings to browser storage after applying them
+		browser.tabs.get(tid).then(tab => {
+			const url = new URL(tab.url)
+			const storageKey = url.hostname + url.pathname
+			
+			// Get the complete current settings and element index by executing script
+			browser.tabs.executeScript(tid, { frameId: fid, code: `(function () {
+				const el = document.querySelector('[data-x-soundfixer-id="${elid}"]')
+				if (el && el.xSoundFixerSettings) {
+					// Find element index among all audio/video elements
+					const allElements = Array.from(document.querySelectorAll('video, audio'))
+					const elementIndex = allElements.indexOf(el)
+					
+					return {
+						settings: el.xSoundFixerSettings,
+						index: elementIndex
+					}
+				}
+				return null
+			})()` }).then(result => {
+				const elementData = result[0]
+				if (elementData && elementData.settings) {
+					// Get existing settings for this page or create new object
+					browser.storage.local.get([storageKey]).then(storageResult => {
+						const pageSettings = storageResult[storageKey] || {}
+						
+						// Update settings for this specific element using index instead of frame ID
+						pageSettings[`element_${elementData.index}`] = elementData.settings
+						
+						// Save back to storage
+						browser.storage.local.set({ [storageKey]: pageSettings })
+							console.log(`Saved complete settings for ${storageKey}:`, JSON.stringify(pageSettings))
+					}).catch(err => console.error('Error saving settings:', err))
+				}
+			}).catch(err => console.error('Error getting complete settings:', err))
+		}).catch(err => console.error('Error getting tab info:', err))
+	})
 }
 
 browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
@@ -80,10 +116,52 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 				}
 				return result
 			})()` }).then(result => frameMap.set(fid, result[0]))
-			.catch(err => console.error(`tab ${tid} frame ${fid}`, err))
+			.catch(err => {
+				// Skip frames that can't be accessed due to permission restrictions
+				if (err.message && err.message.includes('Missing host permission')) {
+					console.log(`Skipping frame ${fid} due to permission restrictions`)
+				} else {
+					console.error(`tab ${tid} frame ${fid}`, err)
+				}
+			})
 		}))
 	)
 }).then(_ => {
+	// Load and apply saved settings for this page (with delay for proper initialization)
+	browser.tabs.get(tid).then(tab => {
+		const url = new URL(tab.url)
+		const storageKey = url.hostname + url.pathname
+		
+		browser.storage.local.get([storageKey]).then(result => {
+			const pageSettings = result[storageKey] || {}
+			console.log(`Loading settings for ${storageKey}:`, JSON.stringify(pageSettings))
+			
+			
+			// Add a small delay to ensure elements are ready, then apply saved settings
+			setTimeout(() => {
+				// Flatten all elements from all frames into a single array with their frame info
+				const allElements = []
+				for (const [fid, els] of frameMap) {
+					for (const [elid, el] of els) {
+						allElements.push({ fid, elid, el })
+					}
+				}
+				
+				// Apply settings using natural array index
+				allElements.forEach((elementData, index) => {
+					const elementKey = `element_${index}`
+					if (pageSettings[elementKey]) {
+						console.log(`Applying saved settings to element ${elementKey}:`, pageSettings[elementKey])
+						// Apply the complete saved settings
+						applySettings(elementData.fid, elementData.elid, pageSettings[elementKey]).catch(err => {
+							console.error(`Failed to apply settings to ${elementKey}:`, err)
+						})
+					}
+				})
+			}, 100) // 100ms delay to ensure elements are ready
+		}).catch(err => console.error('Error loading settings:', err))
+	}).catch(err => console.error('Error getting tab info for loading:', err))
+	
 	elementsList.textContent = ''
 	let elCount = 0
 	for (const [fid, els] of frameMap) {
@@ -237,7 +315,7 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 				}
 			})
 			node.querySelector('.element-reset').onclick = function () {
-				gain.value = 1
+				gain.value = 0
 				gain.parentElement.querySelector('.element-gain-num').value = '' + gain.value
 				pan.value = 0
 				pan.parentElement.querySelector('.element-pan-num').value = '' + pan.value
