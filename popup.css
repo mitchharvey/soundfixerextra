@@ -96,6 +96,9 @@ label input[type=number] {
 	width: 7em;
 	margin-left: .5em;
 }
+input[type="number"] {
+    appearance: textfield;
+}
 .element-reset:focus {
 	outline: 1px solid;
 }

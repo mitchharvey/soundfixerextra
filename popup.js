@@ -8,6 +8,7 @@ const indivElements = document.getElementById('individual-elements')
 const elementsTpl = document.getElementById('elements-tpl')
 
 function applySettings (fid, elid, newSettings) {
+	console.log("apply settings")
 	return browser.tabs.executeScript(tid, { frameId: fid, code: `(function () {
 		const el = document.querySelector('[data-x-soundfixer-id="${elid}"]')
 		if (!el.xSoundFixerContext) {

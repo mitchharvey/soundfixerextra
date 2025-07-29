@@ -1,12 +1,12 @@
 {
   "manifest_version": 2,
-  "name": "SoundFixer",
-  "author": "Val Packett",
+  "name": "SoundFixer Extra",
+  "author": "Val Packett (extra by mitch)",
   "version": "1.4.1",
   "description": "Lets you fix annoying sound problems in YouTube videos and such. Like audio in one channel only, too quiet or too loud",
   "browser_specific_settings": {
     "gecko": {
-      "id": "soundfixer@unrelenting.technology"
+      "id": "soundfixerextra@mitch.com"
     }
   },
   "icons": {
@@ -15,11 +15,12 @@
   },
   "permissions": [
     "activeTab",
-    "webNavigation"
+    "webNavigation",
+    "storage"
   ],
   "browser_action": {
     "default_icon": "icon.svg",
-    "default_title": "SoundFixer",
+    "default_title": "SoundFixer Extra",
     "default_popup": "popup.html",
     "theme_icons": [
       {
