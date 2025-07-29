@@ -400,12 +400,18 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 				function applyPan(value) {
 					for (const [fid, els] of frameMap) {
 						for (const [elid, el] of els) {
-							applySettings(fid, elid, { pan: value })
-							const epan = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-pan`)
-							epan.value = value
-							epan.parentElement.querySelector('.element-pan-num').value = '' + value
-							// Disable/enable pan based on mono state
+							// Check if this individual element has mono checked
 							const emono = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-mono`)
+							const epan = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-pan`)
+							
+							// Skip applying pan if this element has mono checked
+							if (!emono.checked) {
+								applySettings(fid, elid, { pan: value })
+								epan.value = value
+								epan.parentElement.querySelector('.element-pan-num').value = '' + value
+							}
+							
+							// Always update the disabled state regardless
 							epan.disabled = emono.checked
 							epan.parentElement.querySelector('.element-pan-num').disabled = emono.checked
 						}
