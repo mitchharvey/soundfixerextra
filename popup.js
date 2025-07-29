@@ -9,17 +9,29 @@ const elementsTpl = document.getElementById('elements-tpl')
 
 // Helper functions to convert between UI values and Web Audio API values
 function uiGainToWebAudio(uiGain) {
-	// Convert UI gain (0 to 50) to Web Audio gain
-	// UI: 0 = normal, 50 = very loud
-	// WebAudio: 1.0 = normal, 10+ = very loud
-	return 1.0 + (uiGain / 50.0) * 9.0
+	// Convert UI gain (-50 to 50) to Web Audio gain
+	// UI: -50 = very quiet, 0 = normal, 50 = very loud
+	// WebAudio: 0.01 = very quiet, 1.0 = normal, 10+ = very loud
+	if (uiGain <= 0) {
+		// Negative values: scale from 1.0 down to 0.01
+		return Math.max(0.01, 1.0 + (uiGain / 50.0) * 0.99)
+	} else {
+		// Positive values: scale from 1.0 up to 10.0
+		return 1.0 + (uiGain / 50.0) * 9.0
+	}
 }
 
 function webAudioGainToUI(webAudioGain) {
-	// Convert Web Audio gain back to UI value (0 to 50)
-	// WebAudio: 1.0 = normal, 10+ = very loud
-	// UI: 0 = normal, 50 = very loud
-	return Math.round(((webAudioGain - 1.0) / 9.0) * 50.0)
+	// Convert Web Audio gain back to UI value (-50 to 50)
+	// WebAudio: 0.01 = very quiet, 1.0 = normal, 10+ = very loud
+	// UI: -50 = very quiet, 0 = normal, 50 = very loud
+	if (webAudioGain <= 1.0) {
+		// Map 0.01-1.0 to -50 to 0
+		return Math.round(((webAudioGain - 1.0) / 0.99) * 50.0)
+	} else {
+		// Map 1.0-10.0 to 0 to +50
+		return Math.round(((webAudioGain - 1.0) / 9.0) * 50.0)
+	}
 }
 
 function applySettings(fid, elid, newSettings) {
@@ -43,12 +55,15 @@ function applySettings(fid, elid, newSettings) {
 				}
 				const newSettings = ${JSON.stringify(newSettings)}
 				if ('gain' in newSettings) {
-					// Convert UI gain value to Web Audio API gain value
-					const uiGain = newSettings.gain
-					const webAudioGain = uiGain <= 0 ? 
-						Math.max(0.01, 1.0 + (uiGain / 25.0) * 0.99) : 
-						1.0 + (uiGain / 25.0) * 9.0
-					el.xSoundFixerGain.gain.value = webAudioGain
+					// Convert UI gain value to Web Audio API gain value using conversion function
+					function uiGainToWebAudio(uiGain) {
+						if (uiGain <= 0) {
+							return Math.max(0.01, 1.0 + (uiGain / 50.0) * 0.99)
+						} else {
+							return 1.0 + (uiGain / 50.0) * 9.0
+						}
+					}
+					el.xSoundFixerGain.gain.value = uiGainToWebAudio(newSettings.gain)
 				}
 				if ('pan' in newSettings) {
 					// Scale pan value from UI range (-5 to +5) to Web Audio API range (-1 to +1)
@@ -71,9 +86,17 @@ function applySettings(fid, elid, newSettings) {
 						el.xSoundFixerPan.connect(el.xSoundFixerContext.destination)
 					}
 				}
+				// Store UI values for consistent saving/loading
+				function webAudioGainToUI(webAudioGain) {
+					if (webAudioGain <= 1.0) {
+						return Math.round(((webAudioGain - 1.0) / 0.99) * 50.0)
+					} else {
+						return Math.round(((webAudioGain - 1.0) / 9.0) * 50.0)
+					}
+				}
 				el.xSoundFixerSettings = {
-					gain: el.xSoundFixerGain.gain.value,
-					pan: el.xSoundFixerPan.pan.value,
+					gain: webAudioGainToUI(el.xSoundFixerGain.gain.value),
+					pan: Math.round(el.xSoundFixerPan.pan.value * 5), // Convert back to UI range (-5 to +5)
 					mono: el.xSoundFixerContext.destination.channelCount == 1,
 					flip: el.xSoundFixerFlipped || false,
 				}
@@ -272,10 +295,22 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 					this.parentElement.querySelector('.element-pan').value = '' + this.value
 				})
 				const mono = node.querySelector('.element-mono')
-				mono.checked = settings.mono || false
-				mono.addEventListener('change', _ => {
-					applySettings(fid, elid, { mono: mono.checked })
-				})
+			mono.checked = settings.mono || false
+			// Set initial pan disabled state based on mono
+			pan.disabled = mono.checked
+			panNumberInput.disabled = mono.checked
+			mono.addEventListener('change', _ => {
+				// When mono is checked, disable pan and reset to 0
+				if (mono.checked) {
+					pan.value = 0
+					panNumberInput.value = '0'
+					applySettings(fid, elid, { pan: 0, mono: true })
+				} else {
+					applySettings(fid, elid, { mono: false })
+				}
+				pan.disabled = mono.checked
+				panNumberInput.disabled = mono.checked
+			})
 				const flip = node.querySelector('.element-flip')
 				flip.checked = settings.flip || false
 				flip.addEventListener('change', _ => {
@@ -355,17 +390,81 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 					applyGain(+this.value)
 					saveAllMediaSettings({ gain: +this.value })
 				})
+				
+				// Pan controls
+				const pan = node.querySelector('.element-pan')
+				const panNumberInput = node.querySelector('.element-pan-num')
+				pan.value = allMediaSettings.pan || 0
+				panNumberInput.value = '' + pan.value
+				
+				function applyPan(value) {
+					for (const [fid, els] of frameMap) {
+						for (const [elid, el] of els) {
+							applySettings(fid, elid, { pan: value })
+							const epan = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-pan`)
+							epan.value = value
+							epan.parentElement.querySelector('.element-pan-num').value = '' + value
+							// Disable/enable pan based on mono state
+							const emono = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-mono`)
+							epan.disabled = emono.checked
+							epan.parentElement.querySelector('.element-pan-num').disabled = emono.checked
+						}
+					}
+					pan.value = value
+					panNumberInput.value = '' + value
+					// Disable/enable pan based on mono state
+					const mono = node.querySelector('.element-mono')
+					pan.disabled = mono.checked
+					panNumberInput.disabled = mono.checked
+				}
+				
+				pan.addEventListener('input', _ => {
+					applyPan(pan.value)
+					saveAllMediaSettings({ pan: +pan.value })
+				})
+				// Double-click to reset pan to 0
+				pan.addEventListener('dblclick', function () {
+					this.value = 0
+					this.parentElement.querySelector('.element-pan-num').value = '0'
+					applyPan(0)
+					saveAllMediaSettings({ pan: 0 })
+				})
+				panNumberInput.addEventListener('input', function () {
+					if (+this.value > +this.getAttribute('max'))
+						this.value = this.getAttribute('max')
+					if (+this.value < +this.getAttribute('min'))
+						this.value = this.getAttribute('min')
+					applyPan(+this.value)
+					saveAllMediaSettings({ pan: +this.value })
+				})
 				const mono = node.querySelector('.element-mono')
 				mono.checked = allMediaSettings.mono || false
 				mono.addEventListener('change', function() {
+					// When mono is checked, disable pan and reset to 0
+					if (this.checked) {
+						pan.value = 0
+						panNumberInput.value = '0'
+						applyPan(0)
+					}
 					for (const [fid, els] of frameMap) {
 						for (const [elid, el] of els) {
-							applySettings(fid, elid, { mono: this.checked })
+							applySettings(fid, elid, { mono: this.checked, ...(this.checked && { pan: 0 }) })
 							const emono = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-mono`)
 							emono.checked = this.checked
+							// Disable individual element pan controls too
+							const epan = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-pan`)
+							const epanInput = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-pan-num`)
+							epan.disabled = this.checked
+							epanInput.disabled = this.checked
+							if (this.checked) {
+								epan.value = 0
+								epanInput.value = '0'
+							}
 						}
 					}
-					saveAllMediaSettings({ mono: this.checked })
+					pan.disabled = this.checked
+					panNumberInput.disabled = this.checked
+					saveAllMediaSettings({ mono: this.checked, ...(this.checked && { pan: 0 }) })
 				})
 				const flip = node.querySelector('.element-flip')
 				flip.checked = allMediaSettings.flip || false
