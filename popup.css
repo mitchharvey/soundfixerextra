@@ -98,6 +98,7 @@ label input[type=number] {
 }
 input[type="number"] {
     appearance: textfield;
+	width: 2rem;
 }
 .element-reset:focus {
 	outline: 1px solid;

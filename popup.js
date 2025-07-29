@@ -8,51 +8,56 @@ const indivElements = document.getElementById('individual-elements')
 const elementsTpl = document.getElementById('elements-tpl')
 
 function applySettings (fid, elid, newSettings) {
-	console.log("apply settings")
-	return browser.tabs.executeScript(tid, { frameId: fid, code: `(function () {
-		const el = document.querySelector('[data-x-soundfixer-id="${elid}"]')
-		if (!el.xSoundFixerContext) {
-			el.xSoundFixerContext = new AudioContext()
-			el.xSoundFixerGain = el.xSoundFixerContext.createGain()
-			el.xSoundFixerPan = el.xSoundFixerContext.createStereoPanner()
-			el.xSoundFixerSplit = el.xSoundFixerContext.createChannelSplitter(2)
-			el.xSoundFixerMerge = el.xSoundFixerContext.createChannelMerger(2)
-			el.xSoundFixerSource = el.xSoundFixerContext.createMediaElementSource(el)
-			el.xSoundFixerSource.connect(el.xSoundFixerGain)
-			el.xSoundFixerGain.connect(el.xSoundFixerPan)
-			el.xSoundFixerPan.connect(el.xSoundFixerContext.destination)
-			el.xSoundFixerOriginalChannels = el.xSoundFixerContext.destination.channelCount
+	console.log(`apply settings: ${fid} ${elid} ${JSON.stringify(newSettings)}`)
+	return browser.tabs.executeScript(
+		tid, 
+		{ frameId: fid,
+			code: `(function () {
+				const el = document.querySelector('[data-x-soundfixer-id="${elid}"]')
+				if (!el.xSoundFixerContext) {
+					el.xSoundFixerContext = new AudioContext()
+					el.xSoundFixerGain = el.xSoundFixerContext.createGain()
+					el.xSoundFixerPan = el.xSoundFixerContext.createStereoPanner()
+					el.xSoundFixerSplit = el.xSoundFixerContext.createChannelSplitter(2)
+					el.xSoundFixerMerge = el.xSoundFixerContext.createChannelMerger(2)
+					el.xSoundFixerSource = el.xSoundFixerContext.createMediaElementSource(el)
+					el.xSoundFixerSource.connect(el.xSoundFixerGain)
+					el.xSoundFixerGain.connect(el.xSoundFixerPan)
+					el.xSoundFixerPan.connect(el.xSoundFixerContext.destination)
+					el.xSoundFixerOriginalChannels = el.xSoundFixerContext.destination.channelCount
+				}
+				const newSettings = ${JSON.stringify(newSettings)}
+				if ('gain' in newSettings) {
+					el.xSoundFixerGain.gain.value = newSettings.gain
+				}
+				if ('pan' in newSettings) {
+					el.xSoundFixerPan.pan.value = newSettings.pan
+				}
+				if ('mono' in newSettings) {
+					el.xSoundFixerContext.destination.channelCount = newSettings.mono ? 1 : el.xSoundFixerOriginalChannels
+				}
+				if ('flip' in newSettings) {
+					el.xSoundFixerFlipped = newSettings.flip
+					el.xSoundFixerMerge.disconnect()
+					el.xSoundFixerPan.disconnect()
+					if (el.xSoundFixerFlipped) {
+						el.xSoundFixerPan.connect(el.xSoundFixerSplit)
+						el.xSoundFixerSplit.connect(el.xSoundFixerMerge, 0, 1)
+						el.xSoundFixerSplit.connect(el.xSoundFixerMerge, 1, 0)
+						el.xSoundFixerMerge.connect(el.xSoundFixerContext.destination)
+					} else {
+						el.xSoundFixerPan.connect(el.xSoundFixerContext.destination)
+					}
+				}
+				el.xSoundFixerSettings = {
+					gain: el.xSoundFixerGain.gain.value,
+					pan: el.xSoundFixerPan.pan.value,
+					mono: el.xSoundFixerContext.destination.channelCount == 1,
+					flip: el.xSoundFixerFlipped,
+				}
+			})()`
 		}
-		const newSettings = ${JSON.stringify(newSettings)}
-		if ('gain' in newSettings) {
-			el.xSoundFixerGain.gain.value = newSettings.gain
-		}
-		if ('pan' in newSettings) {
-			el.xSoundFixerPan.pan.value = newSettings.pan
-		}
-		if ('mono' in newSettings) {
-			el.xSoundFixerContext.destination.channelCount = newSettings.mono ? 1 : el.xSoundFixerOriginalChannels
-		}
-		if ('flip' in newSettings) {
-			el.xSoundFixerFlipped = newSettings.flip
-			el.xSoundFixerMerge.disconnect()
-			el.xSoundFixerPan.disconnect()
-			if (el.xSoundFixerFlipped) {
-				el.xSoundFixerPan.connect(el.xSoundFixerSplit)
-				el.xSoundFixerSplit.connect(el.xSoundFixerMerge, 0, 1)
-				el.xSoundFixerSplit.connect(el.xSoundFixerMerge, 1, 0)
-				el.xSoundFixerMerge.connect(el.xSoundFixerContext.destination)
-			} else {
-				el.xSoundFixerPan.connect(el.xSoundFixerContext.destination)
-			}
-		}
-		el.xSoundFixerSettings = {
-			gain: el.xSoundFixerGain.gain.value,
-			pan: el.xSoundFixerPan.pan.value,
-			mono: el.xSoundFixerContext.destination.channelCount == 1,
-			flip: el.xSoundFixerFlipped,
-		}
-	})()` })
+	)
 }
 
 browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
@@ -98,7 +103,7 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 				node.querySelector('.element-label').classList.add('element-not-playing')
 			const gain = node.querySelector('.element-gain')
 			const gainNumberInput = node.querySelector('.element-gain-num')
-			gain.value = settings.gain || 1
+			gain.value = settings.gain || 0
 			gain.parentElement.querySelector('.element-gain-num').value = '' + gain.value
 			gain.addEventListener('input', function () {
 				// We used a function expression thus gain === this
@@ -142,7 +147,7 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 				applySettings(fid, elid, { flip: flip.checked })
 			})
 			node.querySelector('.element-reset').onclick = function () {
-				gain.value = 1
+				gain.value = 0
 				gain.parentElement.querySelector('.element-gain-num').value = '' + gain.value
 				pan.value = 0
 				pan.parentElement.querySelector('.element-pan-num').value = '' + pan.value
