@@ -17,7 +17,7 @@ function applyAudioSettings(settings) {
 		// Apply settings if they exist for this element
 		if (settings[elementKey]) {
 			const savedSettings = settings[elementKey]
-			console.log(`Auto-applying saved settings to element ${elid}:`, savedSettings)
+			console.log(`Applying saved settings to element ${elementKey}:`, savedSettings)
 			
 			try {
 				// Initialize audio context and nodes if not already done
@@ -34,9 +34,14 @@ function applyAudioSettings(settings) {
 					el.xSoundFixerOriginalChannels = el.xSoundFixerContext.destination.channelCount
 				}
 				
-				// Apply saved settings
+				// Apply saved settings with proper conversions
 				if ('gain' in savedSettings) {
-					el.xSoundFixerGain.gain.value = savedSettings.gain
+					// Convert UI gain value to Web Audio API gain value
+					const uiGain = savedSettings.gain
+					const webAudioGain = uiGain <= 0 ? 
+						Math.max(0.01, 1.0 + (uiGain / 25.0) * 0.99) : 
+						1.0 + (uiGain / 25.0) * 9.0
+					el.xSoundFixerGain.gain.value = webAudioGain
 				}
 				if ('pan' in savedSettings) {
 					el.xSoundFixerPan.pan.value = savedSettings.pan

@@ -7,10 +7,36 @@ const allElements = document.getElementById('all-elements')
 const indivElements = document.getElementById('individual-elements')
 const elementsTpl = document.getElementById('elements-tpl')
 
-function applySettings (fid, elid, newSettings) {
+// Helper functions to convert between UI values and Web Audio API values
+function uiGainToWebAudio(uiGain) {
+	// Convert UI gain (-25 to +25) to Web Audio gain
+	// UI: -25 = very quiet, 0 = normal, +25 = very loud
+	// WebAudio: 0.01 = very quiet, 1.0 = normal, 10+ = very loud
+	if (uiGain <= 0) {
+		// Negative values: scale from 1.0 down to 0.01
+		return Math.max(0.01, 1.0 + (uiGain / 25.0) * 0.99)
+	} else {
+		// Positive values: scale from 1.0 up to 10.0
+		return 1.0 + (uiGain / 25.0) * 9.0
+	}
+}
+
+function webAudioGainToUI(webAudioGain) {
+	// Convert Web Audio gain back to UI value
+	if (webAudioGain <= 1.0) {
+		// Map 0.01-1.0 to -25 to 0
+		return Math.round(((webAudioGain - 1.0) / 0.99) * 25.0)
+	} else {
+		// Map 1.0-10.0 to 0 to +25
+		return Math.round(((webAudioGain - 1.0) / 9.0) * 25.0)
+	}
+}
+
+function applySettings(fid, elid, newSettings) {
 	return browser.tabs.executeScript(
-		tid, 
-		{ frameId: fid,
+		tid,
+		{
+			frameId: fid,
 			code: `(function () {
 				const el = document.querySelector('[data-x-soundfixer-id="${elid}"]')
 				if (!el.xSoundFixerContext) {
@@ -27,7 +53,12 @@ function applySettings (fid, elid, newSettings) {
 				}
 				const newSettings = ${JSON.stringify(newSettings)}
 				if ('gain' in newSettings) {
-					el.xSoundFixerGain.gain.value = newSettings.gain
+					// Convert UI gain value to Web Audio API gain value
+					const uiGain = newSettings.gain
+					const webAudioGain = uiGain <= 0 ? 
+						Math.max(0.01, 1.0 + (uiGain / 25.0) * 0.99) : 
+						1.0 + (uiGain / 25.0) * 9.0
+					el.xSoundFixerGain.gain.value = webAudioGain
 				}
 				if ('pan' in newSettings) {
 					el.xSoundFixerPan.pan.value = newSettings.pan
@@ -61,9 +92,10 @@ function applySettings (fid, elid, newSettings) {
 		browser.tabs.get(tid).then(tab => {
 			const url = new URL(tab.url)
 			const storageKey = url.hostname + url.pathname
-			
+
 			// Get the complete current settings and element index by executing script
-			browser.tabs.executeScript(tid, { frameId: fid, code: `(function () {
+			browser.tabs.executeScript(tid, {
+				frameId: fid, code: `(function () {
 				const el = document.querySelector('[data-x-soundfixer-id="${elid}"]')
 				if (el && el.xSoundFixerSettings) {
 					// Find element index among all audio/video elements
@@ -77,21 +109,21 @@ function applySettings (fid, elid, newSettings) {
 				}
 				return null
 			})()` }).then(result => {
-				const elementData = result[0]
-				if (elementData && elementData.settings) {
-					// Get existing settings for this page or create new object
-					browser.storage.local.get([storageKey]).then(storageResult => {
-						const pageSettings = storageResult[storageKey] || {}
-						
-						// Update settings for this specific element using index instead of frame ID
-						pageSettings[`element_${elementData.index}`] = elementData.settings
-						
-						// Save back to storage
-						browser.storage.local.set({ [storageKey]: pageSettings })
+					const elementData = result[0]
+					if (elementData && elementData.settings) {
+						// Get existing settings for this page or create new object
+						browser.storage.local.get([storageKey]).then(storageResult => {
+							const pageSettings = storageResult[storageKey] || {}
+
+							// Update settings for this specific element using index instead of frame ID
+							pageSettings[`element_${elementData.index}`] = elementData.settings
+
+							// Save back to storage
+							browser.storage.local.set({ [storageKey]: pageSettings })
 							console.log(`Saved complete settings for ${storageKey}:`, JSON.stringify(pageSettings))
-					}).catch(err => console.error('Error saving settings:', err))
-				}
-			}).catch(err => console.error('Error getting complete settings:', err))
+						}).catch(err => console.error('Error saving settings:', err))
+					}
+				}).catch(err => console.error('Error getting complete settings:', err))
 		}).catch(err => console.error('Error getting tab info:', err))
 	})
 }
@@ -101,7 +133,8 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 	return browser.webNavigation.getAllFrames({ tabId: tid }).then(frames =>
 		Promise.all(frames.map(frame => {
 			const fid = frame.frameId
-			return browser.tabs.executeScript(tid, { frameId: fid, code: `(function () {
+			return browser.tabs.executeScript(tid, {
+				frameId: fid, code: `(function () {
 				const result = new Map()
 				for (const el of document.querySelectorAll('video, audio')) {
 					if (!el.hasAttribute('data-x-soundfixer-id')) {
@@ -116,14 +149,14 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 				}
 				return result
 			})()` }).then(result => frameMap.set(fid, result[0]))
-			.catch(err => {
-				// Skip frames that can't be accessed due to permission restrictions
-				if (err.message && err.message.includes('Missing host permission')) {
-					console.log(`Skipping frame ${fid} due to permission restrictions`)
-				} else {
-					console.error(`tab ${tid} frame ${fid}`, err)
-				}
-			})
+				.catch(err => {
+					// Skip frames that can't be accessed due to permission restrictions
+					if (err.message && err.message.includes('Missing host permission')) {
+						console.log(`Skipping frame ${fid} due to permission restrictions`)
+					} else {
+						console.error(`tab ${tid} frame ${fid}`, err)
+					}
+				})
 		}))
 	)
 }).then(_ => {
@@ -131,24 +164,25 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 	browser.tabs.get(tid).then(tab => {
 		const url = new URL(tab.url)
 		const storageKey = url.hostname + url.pathname
-		
+
 		browser.storage.local.get([storageKey]).then(result => {
 			const pageSettings = result[storageKey] || {}
 			console.log(`Loading settings for ${storageKey}:`, JSON.stringify(pageSettings))
-			
-			
+
+
 			// Add a small delay to ensure elements are ready, then apply saved settings
 			setTimeout(() => {
 				// Flatten all elements from all frames into a single array with their frame info
-				const allElements = []
+				// Renamed to avoid conflict with global allElements DOM element
+				const allElementsData = []
 				for (const [fid, els] of frameMap) {
 					for (const [elid, el] of els) {
-						allElements.push({ fid, elid, el })
+						allElementsData.push({ fid, elid, el })
 					}
 				}
-				
+
 				// Apply settings using natural array index
-				allElements.forEach((elementData, index) => {
+				allElementsData.forEach((elementData, index) => {
 					const elementKey = `element_${index}`
 					if (pageSettings[elementKey]) {
 						console.log(`Applying saved settings to element ${elementKey}:`, pageSettings[elementKey])
@@ -161,180 +195,200 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 			}, 100) // 100ms delay to ensure elements are ready
 		}).catch(err => console.error('Error loading settings:', err))
 	}).catch(err => console.error('Error getting tab info for loading:', err))
-	
+
 	elementsList.textContent = ''
 	let elCount = 0
-	for (const [fid, els] of frameMap) {
-		for (const [elid, el] of els) {
-			const settings = el.settings || {}
-			const node = document.createElement('li')
-			node.appendChild(document.importNode(elementsTpl.content, true))
-			node.dataset.fid = fid
-			node.dataset.elid = elid
-			node.querySelector('.element-label').textContent = `
+
+	// Get saved settings from storage for UI display
+	browser.tabs.get(tid).then(tab => {
+		const url = new URL(tab.url)
+		const storageKey = url.hostname + url.pathname
+
+		browser.storage.local.get([storageKey]).then(result => {
+			const savedPageSettings = result[storageKey] || {}
+
+			// Build UI with saved settings
+			const allElements = []
+			for (const [fid, els] of frameMap) {
+				for (const [elid, el] of els) {
+					allElements.push({ fid, elid, el })
+				}
+			}
+
+			allElements.forEach((elementData, index) => {
+				const { fid, elid, el } = elementData
+				const elementKey = `element_${index}`
+				const settings = savedPageSettings[elementKey] || {}
+				const node = document.createElement('li')
+				node.appendChild(document.importNode(elementsTpl.content, true))
+				node.dataset.fid = fid
+				node.dataset.elid = elid
+				node.querySelector('.element-label').textContent = `
 				${el.type.charAt(0).toUpperCase() + el.type.slice(1)}
 				${elCount + 1}
 				${fid ? `in frame ${fid}` : ''}
 				${el.isPlaying ? '' : '(not playing)'}
 			`
-			if (!el.isPlaying)
-				node.querySelector('.element-label').classList.add('element-not-playing')
-			const gain = node.querySelector('.element-gain')
-			const gainNumberInput = node.querySelector('.element-gain-num')
-			gain.value = settings.gain || 0
-			gain.parentElement.querySelector('.element-gain-num').value = '' + gain.value
-			gain.addEventListener('input', function () {
-				// We used a function expression thus gain === this
-				applySettings(fid, elid, { gain: this.value })
-				this.parentElement.querySelector('.element-gain-num').value = '' + this.value
-			})
-			gainNumberInput.addEventListener('input', function () {
-				if (+this.value > +this.getAttribute('max'))
-					this.value = this.getAttribute('max')
-				if (+this.value < +this.getAttribute('min'))
-					this.value = this.getAttribute('min')
-				
-				applySettings(fid, elid, { gain: this.value })
-				this.parentElement.querySelector('.element-gain').value = '' + this.value
-			})
-			const pan = node.querySelector('.element-pan')
-			const panNumberInput = node.querySelector('.element-pan-num')
-			pan.value = settings.pan || 0
-			pan.parentElement.querySelector('.element-pan-num').value = '' + pan.value
-			pan.addEventListener('input', function () {
-				applySettings(fid, elid, { pan: this.value })
-				this.parentElement.querySelector('.element-pan-num').value = '' + this.value
-			})
-			panNumberInput.addEventListener('input', function () {
-				if (+this.value > +this.getAttribute('max'))
-					this.value = this.getAttribute('max')
-				if (+this.value < +this.getAttribute('min'))
-					this.value = this.getAttribute('min')
-				
-				applySettings(fid, elid, { pan: this.value })
-				this.parentElement.querySelector('.element-pan').value = '' + this.value
-			})
-			const mono = node.querySelector('.element-mono')
-			mono.checked = settings.mono || false
-			mono.addEventListener('change', _ => {
-				applySettings(fid, elid, { mono: mono.checked })
-			})
-			const flip = node.querySelector('.element-flip')
-			flip.checked = settings.flip || false
-			flip.addEventListener('change', _ => {
-				applySettings(fid, elid, { flip: flip.checked })
-			})
-			node.querySelector('.element-reset').onclick = function () {
-				gain.value = 0
+				if (!el.isPlaying)
+					node.querySelector('.element-label').classList.add('element-not-playing')
+				const gain = node.querySelector('.element-gain')
+				const gainNumberInput = node.querySelector('.element-gain-num')
+				gain.value = settings.gain || 0
 				gain.parentElement.querySelector('.element-gain-num').value = '' + gain.value
-				pan.value = 0
+				gain.addEventListener('input', function () {
+					// We used a function expression thus gain === this
+					applySettings(fid, elid, { gain: this.value })
+					this.parentElement.querySelector('.element-gain-num').value = '' + this.value
+				})
+				gainNumberInput.addEventListener('input', function () {
+					if (+this.value > +this.getAttribute('max'))
+						this.value = this.getAttribute('max')
+					if (+this.value < +this.getAttribute('min'))
+						this.value = this.getAttribute('min')
+
+					applySettings(fid, elid, { gain: this.value })
+					this.parentElement.querySelector('.element-gain').value = '' + this.value
+				})
+				const pan = node.querySelector('.element-pan')
+				const panNumberInput = node.querySelector('.element-pan-num')
+				pan.value = settings.pan || 0
 				pan.parentElement.querySelector('.element-pan-num').value = '' + pan.value
-				mono.checked = false
-				flip.checked = false
-				applySettings(fid, elid, { gain: 1, pan: 0, mono: false, flip: false })
-			}
-			elementsList.appendChild(node)
-			elCount += 1
-		}
-	}
-	if (elCount == 0) {
-			allElements.innerHTML = 'No audio/video found in the current tab. Note that some websites do not work because of cross-domain security restrictions.'
-			indivElements.remove()
-	} else {
-			const node = document.createElement('div')
-			node.appendChild(document.importNode(elementsTpl.content, true))
-			node.querySelector('.element-label').textContent = `All media on the page`
-			const gain = node.querySelector('.element-gain')
-			const gainNumberInput = node.querySelector('.element-gain-num')
-			gain.value = 1
-			gainNumberInput.value = '' + gain.value
-			function applyGain (value) {
-				for (const [fid, els] of frameMap) {
-					for (const [elid, el] of els) {
-						applySettings(fid, elid, { gain: value })
-						const egain = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-gain`)
-						egain.value = value
-						egain.parentElement.querySelector('.element-gain-num').value = '' + value
-					}
+				pan.addEventListener('input', function () {
+					applySettings(fid, elid, { pan: this.value })
+					this.parentElement.querySelector('.element-pan-num').value = '' + this.value
+				})
+				panNumberInput.addEventListener('input', function () {
+					if (+this.value > +this.getAttribute('max'))
+						this.value = this.getAttribute('max')
+					if (+this.value < +this.getAttribute('min'))
+						this.value = this.getAttribute('min')
+
+					applySettings(fid, elid, { pan: this.value })
+					this.parentElement.querySelector('.element-pan').value = '' + this.value
+				})
+				const mono = node.querySelector('.element-mono')
+				mono.checked = settings.mono || false
+				mono.addEventListener('change', _ => {
+					applySettings(fid, elid, { mono: mono.checked })
+				})
+				const flip = node.querySelector('.element-flip')
+				flip.checked = settings.flip || false
+				flip.addEventListener('change', _ => {
+					applySettings(fid, elid, { flip: flip.checked })
+				})
+				node.querySelector('.element-reset').onclick = function () {
+					gain.value = 0
+					gain.parentElement.querySelector('.element-gain-num').value = '' + gain.value
+					pan.value = 0
+					pan.parentElement.querySelector('.element-pan-num').value = '' + pan.value
+					mono.checked = false
+					flip.checked = false
+					applySettings(fid, elid, { gain: 1, pan: 0, mono: false, flip: false })
 				}
-				gain.value = value
-				gainNumberInput.value = '' + value
-			}
-			gain.addEventListener('input', _ => applyGain(gain.value))
-			gainNumberInput.addEventListener('input', function () {
-				if (+this.value > +this.getAttribute('max'))
-					this.value = this.getAttribute('max')
-				if (+this.value < +this.getAttribute('min'))
-					this.value = this.getAttribute('min')
-				applyGain(+this.value)
+				elementsList.appendChild(node)
+				elCount += 1
 			})
-			const pan = node.querySelector('.element-pan')
-			const panNumberInput = node.querySelector('.element-pan-num')
-			pan.value = 0
-			panNumberInput.value = '' + pan.value
-			function applyPan (value) {
-				for (const [fid, els] of frameMap) {
-					for (const [elid, el] of els) {
-						applySettings(fid, elid, { pan: value })
-						const epan = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-pan`)
-						epan.value = value
-						epan.parentElement.querySelector('.element-pan-num').value = '' + value
+
+			if (elCount == 0) {
+				allElements.innerHTML = 'No audio/video found in the current tab. Note that some websites do not work because of cross-domain security restrictions.'
+				indivElements.remove()
+			} else {
+				const node = document.createElement('div')
+				node.appendChild(document.importNode(elementsTpl.content, true))
+				node.querySelector('.element-label').textContent = `All media on the page`
+				const gain = node.querySelector('.element-gain')
+				const gainNumberInput = node.querySelector('.element-gain-num')
+				gain.value = 1
+				gainNumberInput.value = '' + gain.value
+				function applyGain(value) {
+					for (const [fid, els] of frameMap) {
+						for (const [elid, el] of els) {
+							applySettings(fid, elid, { gain: value })
+							const egain = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-gain`)
+							egain.value = value
+							egain.parentElement.querySelector('.element-gain-num').value = '' + value
+						}
 					}
+					gain.value = value
+					gainNumberInput.value = '' + value
 				}
-				pan.value = value
-				panNumberInput.value = '' + value
-			}
-			pan.addEventListener('input', _ => applyPan(pan.value))
-			panNumberInput.addEventListener('input', function () {
-				if (+this.value > +this.getAttribute('max'))
-					this.value = this.getAttribute('max')
-				if (+this.value < +this.getAttribute('min'))
-					this.value = this.getAttribute('min')
-				applyPan(+this.value)
-			})
-			const mono = node.querySelector('.element-mono')
-			mono.checked = false
-			mono.addEventListener('change', _ => {
-				for (const [fid, els] of frameMap) {
-					for (const [elid, el] of els) {
-						applySettings(fid, elid, { mono: mono.checked })
-						const emono = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-mono`)
-						emono.checked = mono.checked
-					}
-				}
-			})
-			const flip = node.querySelector('.element-flip')
-			flip.checked = false
-			flip.addEventListener('change', _ => {
-				for (const [fid, els] of frameMap) {
-					for (const [elid, el] of els) {
-						applySettings(fid, elid, { flip: flip.checked })
-						const eflip = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-flip`)
-						eflip.checked = flip.checked
-					}
-				}
-			})
-			node.querySelector('.element-reset').onclick = function () {
-				gain.value = 0
-				gain.parentElement.querySelector('.element-gain-num').value = '' + gain.value
+				gain.addEventListener('input', _ => applyGain(gain.value))
+				gainNumberInput.addEventListener('input', function () {
+					if (+this.value > +this.getAttribute('max'))
+						this.value = this.getAttribute('max')
+					if (+this.value < +this.getAttribute('min'))
+						this.value = this.getAttribute('min')
+					applyGain(+this.value)
+				})
+				const pan = node.querySelector('.element-pan')
+				const panNumberInput = node.querySelector('.element-pan-num')
 				pan.value = 0
-				pan.parentElement.querySelector('.element-pan-num').value = '' + pan.value
+				panNumberInput.value = '' + pan.value
+				function applyPan(value) {
+					for (const [fid, els] of frameMap) {
+						for (const [elid, el] of els) {
+							applySettings(fid, elid, { pan: value })
+							const epan = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-pan`)
+							epan.value = value
+							epan.parentElement.querySelector('.element-pan-num').value = '' + value
+						}
+					}
+					pan.value = value
+					panNumberInput.value = '' + value
+				}
+				pan.addEventListener('input', _ => applyPan(pan.value))
+				panNumberInput.addEventListener('input', function () {
+					if (+this.value > +this.getAttribute('max'))
+						this.value = this.getAttribute('max')
+					if (+this.value < +this.getAttribute('min'))
+						this.value = this.getAttribute('min')
+					applyPan(+this.value)
+				})
+				const mono = node.querySelector('.element-mono')
 				mono.checked = false
+				mono.addEventListener('change', _ => {
+					for (const [fid, els] of frameMap) {
+						for (const [elid, el] of els) {
+							applySettings(fid, elid, { mono: mono.checked })
+							const emono = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-mono`)
+							emono.checked = mono.checked
+						}
+					}
+				})
+				const flip = node.querySelector('.element-flip')
 				flip.checked = false
-				for (const [fid, els] of frameMap) {
-					for (const [elid, el] of els) {
-						const egain = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-gain`)
-						egain.value = 1
-						egain.parentElement.querySelector('.element-gain-num').value = '' + egain.value
-						const epan = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-pan`)
-						epan.value = 0
-						epan.parentElement.querySelector('.element-pan-num').value = '' + epan.value
-						document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-mono`).checked = false
-						document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-flip`).checked = false
-						applySettings(fid, elid, { gain: 1, pan: 0, mono: false, flip: false })
+				flip.addEventListener('change', _ => {
+					for (const [fid, els] of frameMap) {
+						for (const [elid, el] of els) {
+							applySettings(fid, elid, { flip: flip.checked })
+							const eflip = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-flip`)
+							eflip.checked = flip.checked
+						}
+					}
+				})
+				node.querySelector('.element-reset').onclick = function () {
+					gain.value = 0
+					gain.parentElement.querySelector('.element-gain-num').value = '' + gain.value
+					pan.value = 0
+					pan.parentElement.querySelector('.element-pan-num').value = '' + pan.value
+					mono.checked = false
+					flip.checked = false
+					for (const [fid, els] of frameMap) {
+						for (const [elid, el] of els) {
+							const egain = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-gain`)
+							egain.value = 0
+							egain.parentElement.querySelector('.element-gain-num').value = '' + egain.value
+							const epan = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-pan`)
+							epan.value = 0
+							epan.parentElement.querySelector('.element-pan-num').value = '' + epan.value
+							document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-mono`).checked = false
+							document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-flip`).checked = false
+							applySettings(fid, elid, { gain: 1, pan: 0, mono: false, flip: false })
+						}
 					}
 				}
+				allElements.appendChild(node)
 			}
-			allElements.appendChild(node)
-	}
+		})
+	})
 })
