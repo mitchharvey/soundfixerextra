@@ -9,27 +9,17 @@ const elementsTpl = document.getElementById('elements-tpl')
 
 // Helper functions to convert between UI values and Web Audio API values
 function uiGainToWebAudio(uiGain) {
-	// Convert UI gain (-25 to +25) to Web Audio gain
-	// UI: -25 = very quiet, 0 = normal, +25 = very loud
-	// WebAudio: 0.01 = very quiet, 1.0 = normal, 10+ = very loud
-	if (uiGain <= 0) {
-		// Negative values: scale from 1.0 down to 0.01
-		return Math.max(0.01, 1.0 + (uiGain / 25.0) * 0.99)
-	} else {
-		// Positive values: scale from 1.0 up to 10.0
-		return 1.0 + (uiGain / 25.0) * 9.0
-	}
+	// Convert UI gain (0 to 50) to Web Audio gain
+	// UI: 0 = normal, 50 = very loud
+	// WebAudio: 1.0 = normal, 10+ = very loud
+	return 1.0 + (uiGain / 50.0) * 9.0
 }
 
 function webAudioGainToUI(webAudioGain) {
-	// Convert Web Audio gain back to UI value
-	if (webAudioGain <= 1.0) {
-		// Map 0.01-1.0 to -25 to 0
-		return Math.round(((webAudioGain - 1.0) / 0.99) * 25.0)
-	} else {
-		// Map 1.0-10.0 to 0 to +25
-		return Math.round(((webAudioGain - 1.0) / 9.0) * 25.0)
-	}
+	// Convert Web Audio gain back to UI value (0 to 50)
+	// WebAudio: 1.0 = normal, 10+ = very loud
+	// UI: 0 = normal, 50 = very loud
+	return Math.round(((webAudioGain - 1.0) / 9.0) * 50.0)
 }
 
 function applySettings(fid, elid, newSettings) {
@@ -239,10 +229,16 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 				gain.value = settings.gain || 0
 				gain.parentElement.querySelector('.element-gain-num').value = '' + gain.value
 				gain.addEventListener('input', function () {
-					// We used a function expression thus gain === this
-					applySettings(fid, elid, { gain: this.value })
-					this.parentElement.querySelector('.element-gain-num').value = '' + this.value
-				})
+				// We used a function expression thus gain === this
+				applySettings(fid, elid, { gain: this.value })
+				this.parentElement.querySelector('.element-gain-num').value = '' + this.value
+			})
+			// Double-click to reset gain to 0
+			gain.addEventListener('dblclick', function () {
+				this.value = 0
+				this.parentElement.querySelector('.element-gain-num').value = '0'
+				applySettings(fid, elid, { gain: 0 })
+			})
 				gainNumberInput.addEventListener('input', function () {
 					if (+this.value > +this.getAttribute('max'))
 						this.value = this.getAttribute('max')
@@ -259,6 +255,12 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 				pan.addEventListener('input', function () {
 					applySettings(fid, elid, { pan: this.value })
 					this.parentElement.querySelector('.element-pan-num').value = '' + this.value
+				})
+				// Double-click to reset pan to 0
+				pan.addEventListener('dblclick', function () {
+					this.value = 0
+					this.parentElement.querySelector('.element-pan-num').value = '0'
+					applySettings(fid, elid, { pan: 0 })
 				})
 				panNumberInput.addEventListener('input', function () {
 					if (+this.value > +this.getAttribute('max'))
@@ -286,7 +288,12 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 					pan.parentElement.querySelector('.element-pan-num').value = '' + pan.value
 					mono.checked = false
 					flip.checked = false
-					applySettings(fid, elid, { gain: 1, pan: 0, mono: false, flip: false })
+					saveAllMediaSettings({ gain: 0, pan: 0, mono: false, flip: false })
+					for (const [fid, els] of frameMap) {
+						for (const [elid, el] of els) {
+							applySettings(fid, elid, { gain: 1, pan: 0, mono: false, flip: false })
+						}
+					}
 				}
 				elementsList.appendChild(node)
 				elCount += 1
@@ -305,6 +312,18 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 				const allMediaSettings = savedPageSettings['all_media'] || {}
 				gain.value = allMediaSettings.gain || 0
 				gainNumberInput.value = '' + gain.value
+				
+				// Function to save All media control settings
+				function saveAllMediaSettings(newSettings) {
+					browser.storage.local.get([storageKey]).then(result => {
+						const pageSettings = result[storageKey] || {}
+						const currentAllMediaSettings = pageSettings['all_media'] || {}
+						// Merge new settings with existing ones
+						pageSettings['all_media'] = { ...currentAllMediaSettings, ...newSettings }
+						browser.storage.local.set({ [storageKey]: pageSettings })
+						console.log(`Saved All media settings for ${storageKey}:`, pageSettings['all_media'])
+					}).catch(err => console.error('Error saving All media settings:', err))
+				}
 				function applyGain(value) {
 					for (const [fid, els] of frameMap) {
 						for (const [elid, el] of els) {
@@ -317,48 +336,36 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 					gain.value = value
 					gainNumberInput.value = '' + value
 				}
-				gain.addEventListener('input', _ => applyGain(gain.value))
+				gain.addEventListener('input', _ => {
+					applyGain(gain.value)
+					saveAllMediaSettings({ gain: +gain.value })
+				})
+				// Double-click to reset gain to 0
+				gain.addEventListener('dblclick', function () {
+					this.value = 0
+					this.parentElement.querySelector('.element-gain-num').value = '0'
+					applyGain(0)
+					saveAllMediaSettings({ gain: 0 })
+				})
 				gainNumberInput.addEventListener('input', function () {
 					if (+this.value > +this.getAttribute('max'))
 						this.value = this.getAttribute('max')
 					if (+this.value < +this.getAttribute('min'))
 						this.value = this.getAttribute('min')
 					applyGain(+this.value)
-				})
-				const pan = node.querySelector('.element-pan')
-				const panNumberInput = node.querySelector('.element-pan-num')
-				pan.value = allMediaSettings.pan || 0
-				panNumberInput.value = '' + pan.value
-				function applyPan(value) {
-					for (const [fid, els] of frameMap) {
-						for (const [elid, el] of els) {
-							applySettings(fid, elid, { pan: value })
-							const epan = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-pan`)
-							epan.value = value
-							epan.parentElement.querySelector('.element-pan-num').value = '' + value
-						}
-					}
-					pan.value = value
-					panNumberInput.value = '' + value
-				}
-				pan.addEventListener('input', _ => applyPan(pan.value))
-				panNumberInput.addEventListener('input', function () {
-					if (+this.value > +this.getAttribute('max'))
-						this.value = this.getAttribute('max')
-					if (+this.value < +this.getAttribute('min'))
-						this.value = this.getAttribute('min')
-					applyPan(+this.value)
+					saveAllMediaSettings({ gain: +this.value })
 				})
 				const mono = node.querySelector('.element-mono')
 				mono.checked = allMediaSettings.mono || false
-				mono.addEventListener('change', _ => {
+				mono.addEventListener('change', function() {
 					for (const [fid, els] of frameMap) {
 						for (const [elid, el] of els) {
-							applySettings(fid, elid, { mono: mono.checked })
+							applySettings(fid, elid, { mono: this.checked })
 							const emono = document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-mono`)
-							emono.checked = mono.checked
+							emono.checked = this.checked
 						}
 					}
+					saveAllMediaSettings({ mono: this.checked })
 				})
 				const flip = node.querySelector('.element-flip')
 				flip.checked = allMediaSettings.flip || false
@@ -370,6 +377,7 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 							eflip.checked = flip.checked
 						}
 					}
+					saveAllMediaSettings({ flip: flip.checked })
 				})
 				node.querySelector('.element-reset').onclick = function () {
 					gain.value = 0
