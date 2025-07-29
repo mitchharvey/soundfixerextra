@@ -208,14 +208,15 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 			const savedPageSettings = result[storageKey] || {}
 
 			// Build UI with saved settings
-			const allElements = []
+			// Renamed to avoid conflict with global allElements DOM element
+			const allElementsArray = []
 			for (const [fid, els] of frameMap) {
 				for (const [elid, el] of els) {
-					allElements.push({ fid, elid, el })
+					allElementsArray.push({ fid, elid, el })
 				}
 			}
 
-			allElements.forEach((elementData, index) => {
+			allElementsArray.forEach((elementData, index) => {
 				const { fid, elid, el } = elementData
 				const elementKey = `element_${index}`
 				const settings = savedPageSettings[elementKey] || {}
