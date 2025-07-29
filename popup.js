@@ -61,7 +61,9 @@ function applySettings(fid, elid, newSettings) {
 					el.xSoundFixerGain.gain.value = webAudioGain
 				}
 				if ('pan' in newSettings) {
-					el.xSoundFixerPan.pan.value = newSettings.pan
+					// Scale pan value from UI range (-5 to +5) to Web Audio API range (-1 to +1)
+					const scaledPan = Math.max(-1, Math.min(1, newSettings.pan / 5))
+					el.xSoundFixerPan.pan.value = scaledPan
 				}
 				if ('mono' in newSettings) {
 					el.xSoundFixerContext.destination.channelCount = newSettings.mono ? 1 : el.xSoundFixerOriginalChannels
@@ -299,7 +301,9 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 				node.querySelector('.element-label').textContent = `All media on the page`
 				const gain = node.querySelector('.element-gain')
 				const gainNumberInput = node.querySelector('.element-gain-num')
-				gain.value = 1
+				// Load saved state for All media control (use 'all_media' as key)
+				const allMediaSettings = savedPageSettings['all_media'] || {}
+				gain.value = allMediaSettings.gain || 0
 				gainNumberInput.value = '' + gain.value
 				function applyGain(value) {
 					for (const [fid, els] of frameMap) {
@@ -323,7 +327,7 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 				})
 				const pan = node.querySelector('.element-pan')
 				const panNumberInput = node.querySelector('.element-pan-num')
-				pan.value = 0
+				pan.value = allMediaSettings.pan || 0
 				panNumberInput.value = '' + pan.value
 				function applyPan(value) {
 					for (const [fid, els] of frameMap) {
@@ -346,7 +350,7 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 					applyPan(+this.value)
 				})
 				const mono = node.querySelector('.element-mono')
-				mono.checked = false
+				mono.checked = allMediaSettings.mono || false
 				mono.addEventListener('change', _ => {
 					for (const [fid, els] of frameMap) {
 						for (const [elid, el] of els) {
@@ -357,7 +361,7 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 					}
 				})
 				const flip = node.querySelector('.element-flip')
-				flip.checked = false
+				flip.checked = allMediaSettings.flip || false
 				flip.addEventListener('change', _ => {
 					for (const [fid, els] of frameMap) {
 						for (const [elid, el] of els) {
@@ -384,7 +388,7 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 							epan.parentElement.querySelector('.element-pan-num').value = '' + epan.value
 							document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-mono`).checked = false
 							document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-flip`).checked = false
-							applySettings(fid, elid, { gain: 1, pan: 0, mono: false, flip: false })
+							applySettings(fid, elid, { gain: 0, pan: 0, mono: false, flip: false })
 						}
 					}
 				}
