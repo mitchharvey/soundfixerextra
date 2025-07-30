@@ -19,33 +19,6 @@ function updateBadge() {
 	}).catch(err => console.error('Error triggering badge update:', err))
 }
 
-// Helper functions to convert between UI values and Web Audio API values
-function uiGainToWebAudio(uiGain) {
-	// Convert UI gain (-50 to 50) to Web Audio gain
-	// UI: -50 = very quiet, 0 = normal, 50 = very loud
-	// WebAudio: 0.01 = very quiet, 1.0 = normal, 10+ = very loud
-	if (uiGain <= 0) {
-		// Negative values: scale from 1.0 down to 0.01
-		return Math.max(0.01, 1.0 + (uiGain / 50.0) * 0.99)
-	} else {
-		// Positive values: scale from 1.0 up to 10.0
-		return 1.0 + (uiGain / 50.0) * 9.0
-	}
-}
-
-function webAudioGainToUI(webAudioGain) {
-	// Convert Web Audio gain back to UI value (-50 to 50)
-	// WebAudio: 0.01 = very quiet, 1.0 = normal, 10+ = very loud
-	// UI: -50 = very quiet, 0 = normal, 50 = very loud
-	if (webAudioGain <= 1.0) {
-		// Map 0.01-1.0 to -50 to 0
-		return Math.round(((webAudioGain - 1.0) / 0.99) * 50.0)
-	} else {
-		// Map 1.0-10.0 to 0 to +50
-		return Math.round(((webAudioGain - 1.0) / 9.0) * 50.0)
-	}
-}
-
 function applySettings(fid, elid, newSettings) {
 	return browser.tabs.executeScript(
 		tid,

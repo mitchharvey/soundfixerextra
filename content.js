@@ -7,78 +7,97 @@ function applyAudioSettings(settings) {
 	const elements = document.querySelectorAll('video, audio')
 	
 	elements.forEach((el, index) => {
-		// Assign unique ID if not already present
+		// Assign unique ID if not already present (matches popup.js logic)
 		if (!el.hasAttribute('data-x-soundfixer-id')) {
 			el.setAttribute('data-x-soundfixer-id', Math.random().toString(36).substr(2, 10))
 		}
 		
-		const elementKey = `element_${index}` // Use element index for stable keys
+		const elementId = el.getAttribute('data-x-soundfixer-id')
+		const elementKey = `element_${elementId}`
 		
-		// Apply settings if they exist for this element
+		// Check for individual element settings first, then fall back to all_media settings
+		let settingsToApply = {}
+		
+		// Apply all_media settings as default
+		if (settings.all_media) {
+			settingsToApply = { ...settings.all_media }
+		}
+		
+		// Override with individual element settings if they exist
 		if (settings[elementKey]) {
-			const savedSettings = settings[elementKey]
-			console.log(`Applying saved settings to element ${elementKey}:`, savedSettings)
+			settingsToApply = { ...settingsToApply, ...settings[elementKey] }
+		}
+		
+		// Only proceed if we have settings to apply
+		if (Object.keys(settingsToApply).length === 0) {
+			return
+		}
+		
+		console.log(`Applying saved settings to element ${elementKey}:`, settingsToApply)
+		
+		try {
+			// Initialize audio context and nodes if not already done
+			if (!el.xSoundFixerContext) {
+				el.xSoundFixerContext = new AudioContext()
+				el.xSoundFixerGain = el.xSoundFixerContext.createGain()
+				el.xSoundFixerPan = el.xSoundFixerContext.createStereoPanner()
+				el.xSoundFixerSplit = el.xSoundFixerContext.createChannelSplitter(2)
+				el.xSoundFixerMerge = el.xSoundFixerContext.createChannelMerger(2)
+				el.xSoundFixerSource = el.xSoundFixerContext.createMediaElementSource(el)
+				el.xSoundFixerSource.connect(el.xSoundFixerGain)
+				el.xSoundFixerGain.connect(el.xSoundFixerPan)
+				el.xSoundFixerPan.connect(el.xSoundFixerContext.destination)
+				el.xSoundFixerOriginalChannels = el.xSoundFixerContext.destination.channelCount
+			}
 			
-			try {
-				// Initialize audio context and nodes if not already done
-				if (!el.xSoundFixerContext) {
-					el.xSoundFixerContext = new AudioContext()
-					el.xSoundFixerGain = el.xSoundFixerContext.createGain()
-					el.xSoundFixerPan = el.xSoundFixerContext.createStereoPanner()
-					el.xSoundFixerSplit = el.xSoundFixerContext.createChannelSplitter(2)
-					el.xSoundFixerMerge = el.xSoundFixerContext.createChannelMerger(2)
-					el.xSoundFixerSource = el.xSoundFixerContext.createMediaElementSource(el)
-					el.xSoundFixerSource.connect(el.xSoundFixerGain)
-					el.xSoundFixerGain.connect(el.xSoundFixerPan)
-					el.xSoundFixerPan.connect(el.xSoundFixerContext.destination)
-					el.xSoundFixerOriginalChannels = el.xSoundFixerContext.destination.channelCount
-				}
-				
-				// Apply saved settings with proper conversions
-				if ('gain' in savedSettings) {
-					// Convert UI gain value to Web Audio API gain value
-					const uiGain = savedSettings.gain
-					const webAudioGain = uiGain <= 0 ? 
-						Math.max(0.01, 1.0 + (uiGain / 25.0) * 0.99) : 
-						1.0 + (uiGain / 25.0) * 9.0
-					el.xSoundFixerGain.gain.value = webAudioGain
-				}
-				if ('pan' in savedSettings) {
-					el.xSoundFixerPan.pan.value = savedSettings.pan
-				}
-				if ('mono' in savedSettings) {
-					el.xSoundFixerContext.destination.channelCount = savedSettings.mono ? 1 : el.xSoundFixerOriginalChannels
-				}
-				if ('flip' in savedSettings) {
-					el.xSoundFixerFlipped = savedSettings.flip
+			// Apply saved settings with proper conversions (using same logic as popup.js)
+			if ('gain' in settingsToApply) {
+				const webAudioGain = uiGainToWebAudio(settingsToApply.gain)
+				el.xSoundFixerGain.gain.value = webAudioGain
+				console.log(`Applied gain: UI=${settingsToApply.gain}, WebAudio=${webAudioGain}`)
+			}
+			if ('pan' in settingsToApply) {
+				el.xSoundFixerPan.pan.value = settingsToApply.pan / 100.0
+				console.log(`Applied pan: ${settingsToApply.pan}`)
+			}
+			if ('mono' in settingsToApply) {
+				el.xSoundFixerContext.destination.channelCount = settingsToApply.mono ? 1 : el.xSoundFixerOriginalChannels
+				console.log(`Applied mono: ${settingsToApply.mono}`)
+			}
+			if ('flip' in settingsToApply) {
+				el.xSoundFixerFlipped = settingsToApply.flip
+				try {
 					el.xSoundFixerMerge.disconnect()
 					el.xSoundFixerPan.disconnect()
-					if (el.xSoundFixerFlipped) {
-						el.xSoundFixerPan.connect(el.xSoundFixerSplit)
-						el.xSoundFixerSplit.connect(el.xSoundFixerMerge, 0, 1)
-						el.xSoundFixerSplit.connect(el.xSoundFixerMerge, 1, 0)
-						el.xSoundFixerMerge.connect(el.xSoundFixerContext.destination)
-					} else {
-						el.xSoundFixerPan.connect(el.xSoundFixerContext.destination)
-					}
+				} catch (e) {
+					// Ignore disconnect errors - nodes may not be connected yet
 				}
-				
-				// Store current settings on element
-				el.xSoundFixerSettings = {
-					gain: el.xSoundFixerGain.gain.value,
-					pan: el.xSoundFixerPan.pan.value,
-					mono: el.xSoundFixerContext.destination.channelCount == 1,
-					flip: el.xSoundFixerFlipped,
+				if (el.xSoundFixerFlipped) {
+					el.xSoundFixerPan.connect(el.xSoundFixerSplit)
+					el.xSoundFixerSplit.connect(el.xSoundFixerMerge, 0, 1)
+					el.xSoundFixerSplit.connect(el.xSoundFixerMerge, 1, 0)
+					el.xSoundFixerMerge.connect(el.xSoundFixerContext.destination)
+				} else {
+					el.xSoundFixerPan.connect(el.xSoundFixerContext.destination)
 				}
-			} catch (error) {
-				console.error('Error applying audio settings to element:', error)
+				console.log(`Applied flip: ${settingsToApply.flip}`)
 			}
+			
+			// Store current settings on element
+			el.xSoundFixerSettings = {
+				gain: el.xSoundFixerGain.gain.value,
+				pan: el.xSoundFixerPan.pan.value,
+				mono: el.xSoundFixerContext.destination.channelCount == 1,
+				flip: el.xSoundFixerFlipped,
+			}
+		} catch (error) {
+			console.error('Error applying audio settings to element:', error)
 		}
 	})
 }
 
 function loadAndApplySettings() {
-	const storageKey = window.location.hostname + window.location.pathname
+	const storageKey = getCurrentPageStorageKey()
 	
 	// Get saved settings from storage
 	if (typeof browser !== 'undefined' && browser.storage) {

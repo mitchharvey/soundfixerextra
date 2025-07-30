@@ -16,7 +16,21 @@ function updateBadge(tabId) {
 			
 			// Check if any settings are applied
 			let hasSettings = false
-			let gain = pageSettings.all_media.gain !== undefined ? pageSettings.all_media.gain : 0
+			let gain = 0
+			
+			// Check all_media settings
+			if (pageSettings.all_media) {
+				if (pageSettings.all_media.gain !== undefined && pageSettings.all_media.gain !== 0) {
+					gain = pageSettings.all_media.gain
+					hasSettings = true
+				}
+				if (pageSettings.all_media.pan !== undefined && pageSettings.all_media.pan !== 0) {
+					hasSettings = true
+				}
+				if (pageSettings.all_media.mono || pageSettings.all_media.flip) {
+					hasSettings = true
+				}
+			}
 			
 			// Check individual element settings
 			for (const key in pageSettings) {
