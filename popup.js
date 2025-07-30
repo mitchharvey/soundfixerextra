@@ -7,6 +7,18 @@ const allElements = document.getElementById('all-elements')
 const indivElements = document.getElementById('individual-elements')
 const elementsTpl = document.getElementById('elements-tpl')
 
+// Function to trigger badge update
+function updateBadge() {
+	browser.tabs.query({active: true, currentWindow: true}).then(tabs => {
+		if (tabs.length > 0) {
+			// Send message to background script to update badge
+			browser.runtime.sendMessage({action: 'updateBadge', tabId: tabs[0].id}).catch(() => {
+				// Fallback: background script will update via storage listener
+			})
+		}
+	}).catch(err => console.error('Error triggering badge update:', err))
+}
+
 // Helper functions to convert between UI values and Web Audio API values
 function uiGainToWebAudio(uiGain) {
 	// Convert UI gain (-50 to 50) to Web Audio gain
@@ -134,7 +146,10 @@ function applySettings(fid, elid, newSettings) {
 							pageSettings[`element_${elementData.index}`] = elementData.settings
 
 							// Save back to storage
-							browser.storage.local.set({ [storageKey]: pageSettings })
+							browser.storage.local.set({ [storageKey]: pageSettings }).then(() => {
+								// Update badge after saving
+								updateBadge()
+							})
 							console.log(`Saved complete settings for ${storageKey}:`, JSON.stringify(pageSettings))
 						}).catch(err => console.error('Error saving settings:', err))
 					}
@@ -194,6 +209,31 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 					for (const [elid, el] of els) {
 						allElementsData.push({ fid, elid, el })
 					}
+				}
+
+				// Clean up orphaned element settings if there are fewer elements than saved
+				const currentElementCount = allElementsData.length
+				let needsCleanup = false
+				const cleanedSettings = { ...pageSettings }
+				
+				// Check for orphaned element settings
+				for (const key in pageSettings) {
+					if (key.startsWith('element_')) {
+						const elementIndex = parseInt(key.replace('element_', ''))
+						if (elementIndex >= currentElementCount) {
+							console.log(`Removing orphaned setting: ${key} (only ${currentElementCount} elements exist)`)
+							delete cleanedSettings[key]
+							needsCleanup = true
+						}
+					}
+				}
+				
+				// Save cleaned settings if cleanup was needed
+				if (needsCleanup) {
+					browser.storage.local.set({ [storageKey]: cleanedSettings }).then(() => {
+						console.log(`Cleaned up orphaned settings for ${storageKey}`)
+						updateBadge()
+					}).catch(err => console.error('Error cleaning up settings:', err))
 				}
 
 				// Apply settings using natural array index
@@ -323,7 +363,8 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 					pan.parentElement.querySelector('.element-pan-num').value = '' + pan.value
 					mono.checked = false
 					flip.checked = false
-					saveAllMediaSettings({ gain: 0, pan: 0, mono: false, flip: false })
+					browser.storage.local.remove(storageKey)
+					updateBadge()
 					for (const [fid, els] of frameMap) {
 						for (const [elid, el] of els) {
 							applySettings(fid, elid, { gain: 1, pan: 0, mono: false, flip: false })

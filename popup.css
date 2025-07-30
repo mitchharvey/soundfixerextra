@@ -97,7 +97,7 @@ label input[type=number] {
 	margin-left: .5em;
 }
 input[type="number"] {
-    appearance: textfield;
+	appearance: textfield;
 	width: 2rem;
 }
 .element-reset:focus {
