@@ -115,12 +115,19 @@ function applySettings(fid, elid, newSettings) {
 							// Update settings for this specific element using index instead of frame ID
 							pageSettings[`element_${elementData.index}`] = elementData.settings
 
-							// Save back to storage
-							browser.storage.local.set({ [storageKey]: pageSettings }).then(() => {
-								// Update badge after saving
-								updateBadge()
-							})
-							console.log(`Saved complete settings for ${storageKey}:`, JSON.stringify(pageSettings))
+							// Remove All media settings if all values are 0
+							if (elementData.settings.gain === 0 && elementData.settings.pan === 0 && elementData.settings.mono === false && elementData.settings.flip === false) {
+								browser.storage.local.remove(storageKey).then(() => {
+									console.log(`Removed All media settings for ${storageKey}`)
+								})
+							} else {
+								// Save back to storage
+								browser.storage.local.set({ [storageKey]: pageSettings }).then(() => {
+									console.log(`Saved All media settings for ${storageKey}:`, pageSettings['all_media'])
+								})
+							}
+							updateBadge()
+							console.log(`completed settings for ${storageKey}:`, JSON.stringify(pageSettings))
 						}).catch(err => console.error('Error saving settings:', err))
 					}
 				}).catch(err => console.error('Error getting complete settings:', err))
@@ -130,8 +137,38 @@ function applySettings(fid, elid, newSettings) {
 
 browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 	tid = tabs[0].id
-	return browser.webNavigation.getAllFrames({ tabId: tid }).then(frames =>
-		Promise.all(frames.map(frame => {
+	const mainTabUrl = new URL(tabs[0].url)
+
+	return browser.webNavigation.getAllFrames({ tabId: tid }).then(frames => {
+		// Filter out cross-origin frames that can't use Web Audio API
+		const accessibleFrames = frames.filter(frame => {
+			if (frame.frameId === 0) {
+				// Main frame is always accessible
+				return true
+			}
+
+			try {
+				const frameUrl = new URL(frame.url)
+				// Check if frame is same-origin (same protocol, host, and port)
+				const isSameOrigin = frameUrl.protocol === mainTabUrl.protocol &&
+					frameUrl.hostname === mainTabUrl.hostname &&
+					frameUrl.port === mainTabUrl.port
+
+				if (!isSameOrigin) {
+					console.log(`Skipping cross-origin frame ${frame.frameId}: ${frame.url}`)
+					return false
+				}
+				return true
+			} catch (e) {
+				// Invalid URL, skip this frame
+				console.log(`Skipping frame ${frame.frameId} with invalid URL: ${frame.url}`)
+				return false
+			}
+		})
+
+		console.log(`Scanning ${accessibleFrames.length} accessible frames out of ${frames.length} total frames`)
+
+		return Promise.all(accessibleFrames.map(frame => {
 			const fid = frame.frameId
 			return browser.tabs.executeScript(tid, {
 				frameId: fid, code: `(function () {
@@ -150,15 +187,11 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 				return result
 			})()` }).then(result => frameMap.set(fid, result[0]))
 				.catch(err => {
-					// Skip frames that can't be accessed due to permission restrictions
-					if (err.message && err.message.includes('Missing host permission')) {
-						console.log(`Skipping frame ${fid} due to permission restrictions`)
-					} else {
-						console.error(`tab ${tid} frame ${fid}`, err)
-					}
+					// This should be rare now since we pre-filter cross-origin frames
+					console.error(`Unexpected error accessing frame ${fid}:`, err)
 				})
 		}))
-	)
+	})
 }).then(_ => {
 	// Load and apply saved settings for this page (with delay for proper initialization)
 	browser.tabs.get(tid).then(tab => {
@@ -365,8 +398,15 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 						const currentAllMediaSettings = pageSettings['all_media'] || {}
 						// Merge new settings with existing ones
 						pageSettings['all_media'] = { ...currentAllMediaSettings, ...newSettings }
-						browser.storage.local.set({ [storageKey]: pageSettings })
-						console.log(`Saved All media settings for ${storageKey}:`, pageSettings['all_media'])
+
+						// Remove All media settings if all values are 0
+						if (pageSettings['all_media'].gain === 0 && pageSettings['all_media'].pan === 0 && pageSettings['all_media'].mono === false && pageSettings['all_media'].flip === false) {
+							browser.storage.local.remove(storageKey)
+							console.log(`Removed All media settings for ${storageKey}`)
+						} else {
+							browser.storage.local.set({ [storageKey]: pageSettings })
+							console.log(`Saved All media settings for ${storageKey}:`, pageSettings['all_media'])
+						}
 					}).catch(err => console.error('Error saving All media settings:', err))
 				}
 				function applyGain(value) {
