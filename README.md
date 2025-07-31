@@ -9,6 +9,7 @@ originally from https://github.com/valpackett/soundfixer
 a WebExtension that lets you fix annoying sound problems on the web (e.g. in YouTube videos): sound in one channel only, too quiet even at maximum volume, too loud even at minimum volume.
 
 This version will also save preferences for each site you visit, and persist those settings between sessions.
+It cannot change settings for cross-origin frames, same limitation as the original extension, but it will prevent you from attempting to do so.
 Also added a badge to indicate the settings applied to the current page.
 
 <!-- [Download on addons.mozilla.org](https://addons.mozilla.org/firefox/addon/soundfixer/)! -->
