@@ -25,6 +25,21 @@ function applySettings(fid, elid, newSettings) {
 		{
 			frameId: fid,
 			code: `(function () {
+
+				// Embed utility functions since they're not available in injected script context
+				function uiGainToWebAudio(uiGain) {
+					const maxGain = 10
+					if (uiGain <= 0) {
+						return Math.max(0.001, 1.0 + (uiGain / 50.0) * 0.99)
+					} else {
+						return 1.0 + (uiGain / 50.0) * (maxGain - 1.0)
+					}
+				}
+				function uiPanToWebAudio(uiPan) {
+					const maxPan = 10
+					return uiPan / maxPan
+				}
+
 				const el = document.querySelector('[data-x-soundfixer-id="${elid}"]')
 				if (!el.xSoundFixerContext) {
 					el.xSoundFixerContext = new AudioContext()

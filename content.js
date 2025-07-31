@@ -57,8 +57,9 @@ function applyAudioSettings(settings) {
 				console.log(`Applied gain: UI=${settingsToApply.gain}, WebAudio=${webAudioGain}`)
 			}
 			if ('pan' in settingsToApply) {
-				el.xSoundFixerPan.pan.value = settingsToApply.pan / 100.0
-				console.log(`Applied pan: ${settingsToApply.pan}`)
+				const webAudioPan = uiPanToWebAudio(settingsToApply.pan)
+				el.xSoundFixerPan.pan.value = webAudioPan
+				console.log(`Applied pan: UI=${settingsToApply.pan}, WebAudio=${webAudioPan}`)
 			}
 			if ('mono' in settingsToApply) {
 				el.xSoundFixerContext.destination.channelCount = settingsToApply.mono ? 1 : el.xSoundFixerOriginalChannels
