@@ -497,6 +497,7 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 							document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-mono`).checked = false
 							document.querySelector(`[data-fid="${fid}"][data-elid="${elid}"] .element-flip`).checked = false
 							applySettings(fid, elid, { gain: 0, pan: 0, mono: false, flip: false })
+							saveAllMediaSettings({ gain: 0, pan: 0, mono: false, flip: false })
 						}
 					}
 				}
