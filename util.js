@@ -1,6 +1,6 @@
 'use strict'
 
-const maxGain = 20
+const maxGain = 10
 const maxPan = 10
 
 function uiGainToWebAudio(uiGain) {
@@ -8,7 +8,7 @@ function uiGainToWebAudio(uiGain) {
 	// UI: -50 = very quiet, 0 = normal, 50 = very loud
 	if (uiGain <= 0) {
 		// Negative values: scale from 1.0 down to 0.001
-		return Math.max(0.001, 1.0 + (uiGain / 50.0) * 0.99)
+		return Math.max(0.01, 1.0 + (uiGain / 50.0) * 0.99)
 	} else {
 		// Positive values: scale from 1.0 up to maxGain
 		return 1.0 + (uiGain / 50.0) * (maxGain - 1.0)
