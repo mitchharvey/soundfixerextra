@@ -185,11 +185,12 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 					})
 				}
 				return result
-			})()` }).then(result => frameMap.set(fid, result[0]))
-				.catch(err => {
-					// This should be rare now since we pre-filter cross-origin frames
-					console.error(`Unexpected error accessing frame ${fid}:`, err)
-				})
+			})()`
+			}).then(result => frameMap.set(fid, result[0]))
+			.catch(err => {
+				// This should be rare now since we pre-filter cross-origin frames
+				console.error(`Unexpected error accessing frame ${fid}:`, err)
+			})
 		}))
 	})
 }).then(_ => {
