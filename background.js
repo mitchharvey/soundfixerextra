@@ -3,11 +3,6 @@
 // Function to update the badge based on current tab's settings
 function updateBadge(tabId) {
 	browser.tabs.get(tabId).then(tab => {
-		if (tab.url === undefined) {
-			console.log(`No URL found for tab ${tabId}`)
-			return
-		}
-
 		const url = new URL(tab.url)
 		const storageKey = url.hostname + url.pathname
 		
@@ -110,7 +105,7 @@ browser.storage.onChanged.addListener((changes, areaName) => {
 
 // Listen for tab updates to update badge when navigating
 browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-	if (changeInfo.status === 'complete' && tab.active) {
+	if (changeInfo.status === 'complete') {
 		updateBadge(tabId)
 	}
 })

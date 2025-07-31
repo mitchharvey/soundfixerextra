@@ -16,7 +16,8 @@
   "permissions": [
     "activeTab",
     "webNavigation",
-    "storage"
+    "storage",
+    "tabs"
   ],
   "background": {
     "scripts": ["background.js"],
