@@ -1,6 +1,6 @@
 # SoundFixerEXTRA
 
-## [Click here to install latest version](https://github.com/mitchharvey/soundfixerextra/releases/latest)
+## [Click here to install latest version (1.4.1.69)](https://github.com/mitchharvey/soundfixerextra/releases/download/1.4.1.69/SoundFixerEXTRA-1.4.1.69.xpi)
 
 an extension that lets you fix annoying sound problems on the web (e.g. in YouTube videos): sound in one channel only, too quiet even at maximum volume, too loud even at minimum volume.
 
