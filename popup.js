@@ -139,41 +139,21 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 	tid = tabs[0].id
 	const mainTabUrl = new URL(tabs[0].url)
 
-	return browser.webNavigation.getAllFrames({ tabId: tid }).then(frames => {
-		// Filter out cross-origin frames that can't use Web Audio API
-		const accessibleFrames = frames.filter(frame => {
-			if (frame.frameId === 0) {
-				// Main frame is always accessible
-				return true
-			}
-
-			try {
-				const frameUrl = new URL(frame.url)
-				// Check if frame is same-origin (same protocol, host, and port)
-				const isSameOrigin = frameUrl.protocol === mainTabUrl.protocol &&
-					frameUrl.hostname === mainTabUrl.hostname &&
-					frameUrl.port === mainTabUrl.port
-
-				if (!isSameOrigin) {
-					console.log(`Skipping cross-origin frame ${frame.frameId}: ${frame.url}`)
-					return false
-				}
-				return true
-			} catch (e) {
-				// Invalid URL, skip this frame
-				console.log(`Skipping frame ${frame.frameId} with invalid URL: ${frame.url}`)
-				return false
-			}
-		})
-
-		console.log(`Scanning ${accessibleFrames.length} accessible frames out of ${frames.length} total frames`)
-
-		return Promise.all(accessibleFrames.map(frame => {
+	return browser.webNavigation.getAllFrames({ tabId: tid }).then(frames => {		
+		return Promise.all(frames.map(frame => {
 			const fid = frame.frameId
 			return browser.tabs.executeScript(tid, {
 				frameId: fid, code: `(function () {
 				const result = new Map()
 				for (const el of document.querySelectorAll('video, audio')) {
+					
+					// hack to skip ineligible elements
+					/*try {
+						el.mozCaptureStream()
+					} catch (ex) {
+						continue
+					}*/
+
 					if (!el.hasAttribute('data-x-soundfixer-id')) {
 						el.setAttribute('data-x-soundfixer-id',
 							Math.random().toString(36).substr(2, 10))
@@ -190,6 +170,7 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 			.catch(err => {
 				// This should be rare now since we pre-filter cross-origin frames
 				console.error(`Unexpected error accessing frame ${fid}:`, err)
+				frameMap.delete(fid)
 			})
 		}))
 	})
@@ -380,6 +361,8 @@ browser.tabs.query({ currentWindow: true, active: true }).then(tabs => {
 
 			if (elCount == 0) {
 				allElements.innerHTML = 'No audio/video found in the current tab. Note that some websites do not work because of cross-domain security restrictions.'
+				browser.storage.local.remove(storageKey)
+				console.log(`Removed All media settings for ${storageKey}`)
 				indivElements.remove()
 			} else {
 				const node = document.createElement('div')
